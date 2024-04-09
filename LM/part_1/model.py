@@ -1,18 +1,18 @@
 import torch
 import torch.nn as nn
-import math
     
 class LM_LSTM(nn.Module):
 
-    def __init__(self, vocab_size, padding_index, train_criterion, eval_criterion, embedding_dim=300, hidden_dim=200, dropout=True):
+    def __init__(self, vocab_size, padding_index, train_criterion, eval_criterion, embedding_dim=300, hidden_dim=200, dropout=True, device='cuda'):
         super(LM_LSTM, self).__init__()
 
-        self.hidden_layers_size = embedding_dim
-        self.embedded_layer_size = hidden_dim
+        self.hidden_layers_size = hidden_dim
+        self.embedded_layer_size = embedding_dim
         self.output_size = vocab_size
         self.padding_index = padding_index
         self.number_of_layers = 1
         self.useDropout = dropout
+        self.device = device
         
         self.criterion_train = train_criterion
         self.criterion_eval  = eval_criterion
@@ -40,33 +40,15 @@ class LM_LSTM(nn.Module):
 
         # linear layer to map back to the uoutput space
         self.output = nn.Linear(self.hidden_layers_size, self.output_size)
-
-
-    def init_weights(self, mat):
-        for m in mat.modules():
-            if type(m) in [nn.GRU, nn.LSTM, nn.RNN]:
-                for name, param in m.named_parameters():
-                    if 'weight_ih' in name:
-                        for idx in range(4):
-                            mul = param.shape[0]//4
-                            torch.nn.init.xavier_uniform_(param[idx*mul:(idx+1)*mul])
-                    elif 'weight_hh' in name:
-                        for idx in range(4):
-                            mul = param.shape[0]//4
-                            torch.nn.init.orthogonal_(param[idx*mul:(idx+1)*mul])
-                    elif 'bias' in name:
-                        param.data.fill_(0)
-            else:
-                if type(m) in [nn.Linear]:
-                    torch.nn.init.uniform_(m.weight, -0.01, 0.01)
-                    if m.bias != None:
-                        m.bias.data.fill_(0.01)
     
 
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
-        hidden = (weight.new(1, batch_size, self.lstm.hidden_size).zero_(),
-                  weight.new(1, batch_size, self.lstm.hidden_size).zero_())
+        '''hidden = (weight.new(1, batch_size, self.lstm.hidden_size).zero_(),
+                  weight.new(1, batch_size, self.lstm.hidden_size).zero_())'''
+     
+        hidden = (torch.zeros(self.number_of_layers, batch_size, self.hidden_layers_size).to(self.device),
+                  torch.zeros(self.number_of_layers, batch_size, self.hidden_layers_size).to(self.device))
         return hidden
 
 
@@ -75,6 +57,8 @@ class LM_LSTM(nn.Module):
         if(self.useDropout):
             embedded = self.dropout(embedded)
 
+
+        #previous_state.to(token.device)
         LSTM_output, hidden_layer = self.LSTM(embedded, previous_state)
 
         if(self.useDropout):
@@ -83,6 +67,24 @@ class LM_LSTM(nn.Module):
         output = self.output(LSTM_output).permute(0,2,1)
 
         return output, hidden_layer
+    
+    '''def forward(self, token):
+        embedded = self.embedding(token)
+
+        if(self.useDropout):
+            embedded = self.dropout(embedded)
+
+        #h0 = torch.zeros(self.LSTM.num_layers, token.size(0), self.LSTM.hidden_size).to(token.device)
+        #c0 = torch.zeros(self.LSTM.num_layers, token.size(0), self.LSTM.hidden_size).to(token.device)
+
+        LSTM_output, _ = self.LSTM(embedded)
+
+        if(self.useDropout):
+            LSTM_output = self.dropout2(LSTM_output)
+
+        output = self.output(LSTM_output).permute(0,2,1)
+
+        return output'''
     
 
         

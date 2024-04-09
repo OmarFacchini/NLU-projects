@@ -221,4 +221,5 @@ dependencies:
       - webencodings==0.5.1
       - websocket-client==1.7.0
       - widgetsnbextension==4.0.10
+      - wandb
 prefix: /home/massimo/miniconda3/envs/nlu

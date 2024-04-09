@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import torch
 import math
+from torch import nn
 
 import utils
 
@@ -74,6 +75,7 @@ def build_dataloaders(train_data_path, val_data_path, test_data_path):
 
     lang = Lang(train_raw, ["<pad>", "<eos>"])
     vocab_length = len(lang.word2id)
+    padding = lang.word2id["<pad>"]
 
     train_dataset = utils.PennTreeBank(train_raw, lang)
     dev_dataset = utils.PennTreeBank(dev_raw, lang)
@@ -83,7 +85,7 @@ def build_dataloaders(train_data_path, val_data_path, test_data_path):
     dev_loader = DataLoader(dev_dataset, batch_size=1024, collate_fn=partial(collate_fn, pad_token=lang.word2id["<pad>"]))
     test_loader = DataLoader(test_dataset, batch_size=1024, collate_fn=partial(collate_fn, pad_token=lang.word2id["<pad>"]))
 
-    return vocab_length, train_loader, dev_loader, test_loader
+    return vocab_length, train_loader, dev_loader, test_loader, padding
 
 
 ## ====================================== model related functions ========================================== ##
@@ -95,8 +97,13 @@ def train(model, data, optimizer, clip=5):
 
         for sample in data:
             hidden = model.init_hidden(sample['source'].size(0))
+
             optimizer.zero_grad() # Zeroing the gradient
+
             output, hidden = model(sample['source'], hidden)
+            #output = model(sample['source'])
+
+
             loss = model.criterion_train(output, sample['target'])
             total_loss += loss.item() * sample["number_tokens"]
             
@@ -118,10 +125,11 @@ def validation(model, data):
         for sample in data:
             hidden = model.init_hidden(sample['source'].size(0))
             output, hidden = model(sample['source'], hidden)
+            #output = model(sample['source'])
 
             #could remove loss and directly edit the total_loss but this looks cleaner and clearer
             loss = model.criterion_eval(output, sample['target'])
-            total_loss += loss.item() * sample["number_tokens"]
+            total_loss += loss.item()
             
             number_of_tokens.append(sample["number_tokens"])   
 
@@ -130,6 +138,26 @@ def validation(model, data):
     average_loss = total_loss/sum(number_of_tokens)
 
     return perplexity, average_loss
+
+def init_weights(mat):
+        for m in mat.modules():
+            if type(m) in [nn.GRU, nn.LSTM, nn.RNN]:
+                for name, param in m.named_parameters():
+                    if 'weight_ih' in name:
+                        for idx in range(4):
+                            mul = param.shape[0]//4
+                            torch.nn.init.xavier_uniform_(param[idx*mul:(idx+1)*mul])
+                    elif 'weight_hh' in name:
+                        for idx in range(4):
+                            mul = param.shape[0]//4
+                            torch.nn.init.orthogonal_(param[idx*mul:(idx+1)*mul])
+                    elif 'bias' in name:
+                        param.data.fill_(0)
+            else:
+                if type(m) in [nn.Linear]:
+                    torch.nn.init.uniform_(m.weight, -0.01, 0.01)
+                    if m.bias != None:
+                        m.bias.data.fill_(0.01)
 
 ## ====================================== extra utility functions ========================================== ##
 
@@ -144,4 +172,3 @@ def plot_results(data, epochs, label):
     plt.legend()
 
     plt.savefig(label+'.png')
-

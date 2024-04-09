@@ -1,0 +1,8 @@
+dataset/
+__pycache--/
+wandb/
+*.vscode
+
+*.pyc
+*.txt
+*.log

@@ -12,9 +12,12 @@ import math
 import torch.optim as optim
 import numpy as np
 import argparse
+import wandb
+
 
 
 if __name__ == "__main__":
+
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--optimizer', default='SGD',type=str, help='optimizer to use: SGD or AdamW')
@@ -24,7 +27,6 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', default='myModel', type=str, help="name of the experiment and model that will be stored")
 
     args = parser.parse_args()
-
 
     n_epochs = args.epochs
     patience_fixed = 5
@@ -41,9 +43,19 @@ if __name__ == "__main__":
     emb_size = 300
     learning_rate = args.lr
     clip = 5
-    GPU = 'cuda:0'
+    GPU = "cuda:0"
     CPU = 'cpu'
 
+    wandb.init(
+        project="NLU_LM", 
+        name=args.exp_name, 
+        config={
+            "learning_rate": args.lr,
+            "optimizer": args.optimizer,
+            "epochs": args.epochs,
+            "architecture": "dropout:"+ str(args.dropout)
+            })
+    
     #set a seed for reproducibility of experiments
     torch.manual_seed(32)
     exp_name = args.exp_name
@@ -61,23 +73,33 @@ if __name__ == "__main__":
               store_path='./dataset')
     '''
 
-    data_path = {'train': './dataset/ptb.train.txt',
-                 'val': './dataset/ptb.valid.txt',
-                 'test': './dataset/ptb.test.txt'
+    data_path = {'train': 'dataset/PennTreeBank/ptb.train.txt',
+                 'val': 'dataset/PennTreeBank/ptb.valid.txt',
+                 'test': 'dataset/PennTreeBank/ptb.test.txt'
                  }
     
-    print(args)
+    #path for debugger
+    '''data_path = {'train': 'LM/part_1/dataset/PennTreeBank/ptb.train.txt',
+                 'val': 'LM/part_1/dataset/PennTreeBank/ptb.valid.txt',
+                 'test': 'LM/part_1/dataset/PennTreeBank/ptb.test.txt'}'''
     
-    exit()
 
-    vocab_len, train_loader, val_loader, test_loader = build_dataloaders(train_data_path=data_path['train'],
-                                                                         val_data_path=data_path['val'],
-                                                                         test_data_path=data_path['test'])
+    vocab_len, train_loader, val_loader, test_loader, padding = build_dataloaders(train_data_path=data_path['train'],
+                                                                                  val_data_path=data_path['val'],
+                                                                                  test_data_path=data_path['test'])
+    
+    criterion_train = nn.CrossEntropyLoss(ignore_index=padding)
+    criterion_eval = nn.CrossEntropyLoss(ignore_index=padding, reduction='sum')
 
-
-    model = LM_LSTM(embedding_dim=emb_size, hidden_dim=hid_size, vocab_size=vocab_len, padding_index=0, dropout=args.dropout)
-    model.to(GPU)
-    model.init_weights()
+    model = LM_LSTM(vocab_size=vocab_len, 
+                    padding_index=padding, 
+                    train_criterion=criterion_train, 
+                    eval_criterion=criterion_eval, 
+                    embedding_dim=emb_size,
+                    hidden_dim=hid_size,
+                    dropout=args.dropout,
+                    device=GPU).to(GPU)
+    model.apply(init_weights)
 
     # check the optimizer provided in the arguments, note that the default value is SGD
     # if optimizer is not provided, use SGD, if the provided optimizer is not one of the options, use the default SGD
@@ -86,7 +108,7 @@ if __name__ == "__main__":
     elif(args.optimizer == "SGD"):
         optimizer = optim.SGD(model.parameters(), lr=learning_rate)
     else:
-        optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+        optimizer = optim.SGD(model.parameters(), lr=4)
 
 
     #If the PPL is too high try to change the learning rate
@@ -99,7 +121,8 @@ if __name__ == "__main__":
             sampled_epochs.append(epoch)
             losses_train.append(np.asarray(loss).mean())
 
-            ppl_val, loss_val = model.validation(data=val_loader)
+            #ppl_val, loss_val = model.validation(data=val_loader)
+            ppl_val, loss_val = validation(model=model, data=val_loader)
             perplexity_list.append(ppl_val)
 
             losses_val.append(np.asarray(loss_val).mean())
@@ -114,12 +137,16 @@ if __name__ == "__main__":
             if patience_current <= 0: # Early stopping with patience
                 break # Not nice but it keeps the code clean
 
-    plot_results(data=perplexity_list, epochs=n_epochs, label='perplexity')
+            wandb.log({"train_loss": loss, "validation_loss": loss_val}, step=epoch)
+            wandb.log({"perplexity": ppl_val}, step=epoch)
+
+
+    '''plot_results(data=perplexity_list, epochs=n_epochs, label='perplexity')
     plot_results(data=losses_val, epochs=n_epochs, label='val_loss')
-    plot_results(data=losses_train, epochs=n_epochs, label='train_loss')
+    plot_results(data=losses_train, epochs=n_epochs, label='train_loss')'''
 
     best_model.to(GPU)
 
-    final_ppl, _ = best_model.validation(data=test_loader)
+    final_ppl, _ = validation(model=best_model, data=val_loader)
     print('Test ppl: ', final_ppl)
     torch.save(model.state_dict(), "./models/"+exp_name+".pth")

@@ -10,4 +10,4 @@
 wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.test.txt
 wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.valid.txt
 wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.train.txt
-python main.py --optimizer SGD --epochs 100 --dropout False --lr 0.01 --exp_name SGD001
+CUDA_VISIBLE_DEVICES=0 python main.py --optimizer SGD --epochs 100 --dropout False --lr 4 --exp_name SGD001
