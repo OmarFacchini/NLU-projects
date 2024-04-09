@@ -1,10 +1,9 @@
 # Add functions or classes used for data loading and preprocessing
 
 import torch
-#import torch.utils.data as data
-from functools import partial
 from torch.utils.data import Dataset
 from subprocess import run
+import urllib.request
 
 class PennTreeBank(Dataset):
     # Mandatory methods are __init__, __len__ and __getitem__

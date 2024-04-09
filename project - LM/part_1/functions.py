@@ -7,9 +7,12 @@ from functools import partial
 from torch import LongTensor
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+import torch
+import math
 
 import utils
 
+## ====================================== data load related functions ========================================== ##
 class Lang():
     def __init__(self, corpus, special_tokens=[]):
         self.word2id = self.get_vocab(corpus, special_tokens)
@@ -28,8 +31,7 @@ class Lang():
                     output[w] = i
                     i += 1
         return output
-
-##### ----------------- FROM NOW ON THERE ARE FUNCTIONS, NO MORE CLASSES
+    
 
 def collate_fn(data, pad_token, device='cuda:0'):
     def merge(sequences):
@@ -83,6 +85,53 @@ def build_dataloaders(train_data_path, val_data_path, test_data_path):
 
     return vocab_length, train_loader, dev_loader, test_loader
 
+
+## ====================================== model related functions ========================================== ##
+def train(model, data, optimizer, clip=5):
+        model.train()
+        loss = 0
+        total_loss = 0
+        number_of_tokens = []
+
+        for sample in data:
+            hidden = model.init_hidden(sample['source'].size(0))
+            optimizer.zero_grad() # Zeroing the gradient
+            output, hidden = model(sample['source'], hidden)
+            loss = model.criterion_train(output, sample['target'])
+            total_loss += loss.item() * sample["number_tokens"]
+            
+            number_of_tokens.append(sample["number_tokens"])
+            loss.backward() # Compute the gradient
+            # clip the gradient to avoid explosioning gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+            optimizer.step() # Update the weights
+
+        return total_loss/sum(number_of_tokens)    
+
+
+def validation(model, data):
+    model.eval()
+
+    with torch.no_grad():
+        total_loss = 0
+        number_of_tokens = []
+        for sample in data:
+            hidden = model.init_hidden(sample['source'].size(0))
+            output, hidden = model(sample['source'], hidden)
+
+            #could remove loss and directly edit the total_loss but this looks cleaner and clearer
+            loss = model.criterion_eval(output, sample['target'])
+            total_loss += loss.item() * sample["number_tokens"]
+            
+            number_of_tokens.append(sample["number_tokens"])   
+
+    # calculate perplexity and averaged loss that will be returned as measures for performance
+    perplexity = math.exp(total_loss / sum(number_of_tokens))
+    average_loss = total_loss/sum(number_of_tokens)
+
+    return perplexity, average_loss
+
+## ====================================== extra utility functions ========================================== ##
 
 def plot_results(data, epochs, label):
     epochs_list = range(1,epochs+1)
