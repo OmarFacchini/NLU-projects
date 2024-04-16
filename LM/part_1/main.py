@@ -22,8 +22,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--optimizer', default='SGD',type=str, help='optimizer to use: SGD or AdamW')
     parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
-    parser.add_argument('--dropout', default=True,type=bool, help='use dropout: True or False')
+    parser.add_argument('--dropout', default=1, type=int, choices=[0,1], help='use dropout: 1(true) or 0(False)')
     parser.add_argument('--lr', default=0.01, type=float, help="learning rate to use")
+    parser.add_argument('--regularization', default=0, choices=[0,1,2,3], type=int, help="regularization technique to use: 1: Weight Tying 2: Variational Dropout(no DropConnect) 3: Non-monotonically Triggered AvSGD")
     parser.add_argument('--exp_name', default='myModel', type=str, help="name of the experiment and model that will be stored")
 
     args = parser.parse_args()
@@ -40,7 +41,11 @@ if __name__ == "__main__":
     pbar = tqdm(range(1,n_epochs))
 
     hid_size = 200
-    emb_size = 300
+
+    if(args.regularization == 1):
+        emb_size = hid_size
+    else:
+        emb_size = 300
     learning_rate = args.lr
     clip = 5
     GPU = "cuda:0"
@@ -53,10 +58,12 @@ if __name__ == "__main__":
             "learning_rate": args.lr,
             "optimizer": args.optimizer,
             "epochs": args.epochs,
-            "architecture": "dropout:"+ str(args.dropout)
+            "architecture": "dropout: "+ str(args.dropout),
+            "dropout value": 0.2,
+            "regularization": args.regularization
             })
     
-    #set a seed for reproducibility of experiments
+    # set a seed for reproducibility of experiments
     torch.manual_seed(32)
     exp_name = args.exp_name
 
@@ -78,7 +85,7 @@ if __name__ == "__main__":
                  'test': 'dataset/PennTreeBank/ptb.test.txt'
                  }
     
-    #path for debugger
+    # path for debugger
     '''data_path = {'train': 'LM/part_1/dataset/PennTreeBank/ptb.train.txt',
                  'val': 'LM/part_1/dataset/PennTreeBank/ptb.valid.txt',
                  'test': 'LM/part_1/dataset/PennTreeBank/ptb.test.txt'}'''
@@ -91,14 +98,42 @@ if __name__ == "__main__":
     criterion_train = nn.CrossEntropyLoss(ignore_index=padding)
     criterion_eval = nn.CrossEntropyLoss(ignore_index=padding, reduction='sum')
 
-    model = LM_LSTM(vocab_size=vocab_len, 
+    # model with weight tying, the actuall tying is done inside the __init__ of the model
+    if(args.regularization == 1):
+        model = LM_LSTM(vocab_size=vocab_len, 
                     padding_index=padding, 
                     train_criterion=criterion_train, 
                     eval_criterion=criterion_eval, 
                     embedding_dim=emb_size,
                     hidden_dim=hid_size,
                     dropout=args.dropout,
+                    regularization=args.regularization,
                     device=GPU).to(GPU)
+        
+    # model with Variational Dropout, the dropout value is fixed inside the __init__ of the model
+    # could provide it as a parameter but it will complicate and create caos so i'd rather keep it fixed and change it myself
+    elif(args.regularization == 2):
+        model = Variational_Dropout_LM_LSTM(vocab_size=vocab_len,
+                                            padding_index=padding,
+                                            train_criterion=criterion_train,
+                                            eval_criterion=criterion_eval,
+                                            embedding_dim=emb_size,
+                                            hidden_dim=hid_size,
+                                            device=GPU).to(GPU)
+        
+    # standard case is LM_LSTM with no regularization(basically part 1)
+    # note: for args.regularization == 3 we have a special case where we use the basic model and use a custom optimizer defined below
+    else:
+        model = LM_LSTM(vocab_size=vocab_len, 
+                    padding_index=padding, 
+                    train_criterion=criterion_train, 
+                    eval_criterion=criterion_eval, 
+                    embedding_dim=emb_size,
+                    hidden_dim=hid_size,
+                    dropout=args.dropout,
+                    regularization=0,
+                    device=GPU).to(GPU)
+
     model.apply(init_weights)
 
     # check the optimizer provided in the arguments, note that the default value is SGD
@@ -107,6 +142,12 @@ if __name__ == "__main__":
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     elif(args.optimizer == "SGD"):
         optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+
+    # this is weird but here we want to change optimizer based on the regularization we want, so it fits here rather than when defining models
+    # use Non-monotonically Triggered AvSGD as optimizer
+    # note: important to have size of window > patience unless you always want to consider the full window for the update which would defeat the whole purpose
+    elif(args.regularization == 3):
+        optimizer = My_AvSGD(params=model.parameters(), lr=learning_rate, validation_window=10, patience=5, threshold=0.001)
     else:
         optimizer = optim.SGD(model.parameters(), lr=4)
 

@@ -122,8 +122,10 @@ def validation(model, data):
     with torch.no_grad():
         total_loss = 0
         number_of_tokens = []
+        
         for sample in data:
             hidden = model.init_hidden(sample['source'].size(0))
+            
             output, hidden = model(sample['source'], hidden)
             #output = model(sample['source'])
 
