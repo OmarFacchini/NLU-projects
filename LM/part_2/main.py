@@ -144,13 +144,13 @@ if __name__ == "__main__":
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     elif(args.optimizer == "SGD"):
         optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+    else:
+        optimizer = optim.SGD(model.parameters(), lr=4)
 
     # this is weird but here we want to change optimizer based on the regularization we want, so it fits here rather than when defining models
     # use AvSGD as optimizer
-    elif(args.regularization == 3):
+    if(args.regularization == 3):
         optimizer = My_AvSGD(params=model.parameters(), lr=learning_rate, threshold=10)
-    else:
-        optimizer = optim.SGD(model.parameters(), lr=4)
 
 
     #If the PPL is too high try to change the learning rate
@@ -178,8 +178,8 @@ if __name__ == "__main__":
             if patience_current <= 0: # Early stopping with patience
                 break # Not nice but it keeps the code clean
 
-            wandb.log({"train_loss": loss, "validation_loss": loss_val}, step=epoch)
-            wandb.log({"perplexity": ppl_val}, step=epoch)
+            #wandb.log({"train_loss": loss, "validation_loss": loss_val}, step=epoch)
+            #wandb.log({"perplexity": ppl_val}, step=epoch)
 
 
     '''plot_results(data=perplexity_list, epochs=n_epochs, label='perplexity')

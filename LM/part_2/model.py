@@ -206,9 +206,13 @@ class Variational_Dropout_LM_LSTM(nn.Module):
             
 
 class My_AvSGD(optim.SGD):
-    def __init__(self, params, lr=4, threshold=0.01, weight_decay=0):
-        default_params = dict(lr=lr, threshold=threshold, weight_decay=weight_decay)
-        super(My_AvSGD, self).__init__(params, default_params)
+    def __init__(self, params, lr=4, lambd=0.0001, threshold=0.01, weight_decay=0):
+        super().__init__(params, lr)
+
+        self.lr = lr
+        self.lambd = lambd
+        self.threshold = threshold
+        self.weight_decay = weight_decay
 
         for group in self.param_groups:
             for param in group['params']:
@@ -217,37 +221,39 @@ class My_AvSGD(optim.SGD):
                                     }
 
     def step(self):
-        with torch.no_grad():
-            for group in self.param_groups:
-                for param in group['params']:
-                    if param.grad is not None:
+        for group in self.param_groups:
+            for param in group['params']:
+                if param.grad is not None:
 
-                        param_gradient_data = param.grad.data
-                        state = self.state[param]
+                    param_gradient_data = param.grad.data
+                    state = self.state[param]
 
-                        # add wd to param if used
-                        if group['weight_decay'] != 0:
-                            param_gradient_data.add_(group['weight_decay'], param.data)
+                    # add wd to param if used
+                    if group['weight_decay'] != 0:
+                        param_gradient_data.add_(group['weight_decay'], param.data)
 
-                        # update number of steps
-                        state['step'] += 1
-                        steps = state['step']
-                        threshold_steps = group['threshold']
+                    # update number of steps
+                    state['steps'] += 1
+                    steps = state['steps']
+                    #threshold_steps = group['threshold']
+                    threshold_steps = self.threshold
 
-                        # check if did more steps than threshold, if so update lr else keep the same
-                        if steps >= threshold_steps:
-                            lr = group['lr'] / (1 + group['lr'] * group['lambd'] * (steps - threshold_steps))
-                        else:
-                            lr = group['lr']
-                        
-                        # update param
-                        param.data.add_(-lr, param_gradient_data)
+                    # check if did more steps than threshold, if so update lr else keep the same
+                    if steps >= threshold_steps:
+                        #lr = group['lr'] / (1 + group['lr'] * group['lambd'] * (steps - threshold_steps))
+                        lr = self.lr / (1 + self.lr * self.lambd * (steps - threshold_steps))
+                    else:
+                        #lr = group['lr']
+                        lr = self.lr
+                    
+                    # update param
+                    param.data.add_(-lr, param_gradient_data)
 
-                        # compute average
-                        if steps >= threshold_steps:
-                            state['average'].add_(param.data - state['average']).mul_((steps - threshold_steps) / (steps - threshold_steps + 1))
-                        else:
-                            state['average'].add_(param.data - state['average']).div_(steps)
+                    # compute average
+                    if steps >= threshold_steps:
+                        state['average'].add_(param.data - state['average']).mul_((steps - threshold_steps) / (steps - threshold_steps + 1))
+                    else:
+                        state['average'].add_(param.data - state['average']).div_(steps)
 
 
     # update the params with the average calculated beforehand
