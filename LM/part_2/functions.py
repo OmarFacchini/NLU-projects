@@ -118,6 +118,9 @@ def train(model, data, optimizer, clip=5):
             if(model.regularization == 2):
                 model.dropout_mask1 = None
                 model.dropout_mask2 = None
+            
+            if(model.regularizaition == 3):
+                optimizer.update_params()
 
         return total_loss/sum(number_of_tokens)    
 

@@ -52,7 +52,7 @@ if __name__ == "__main__":
     #GPU = 'cpu'
     CPU = 'cpu'
 
-    '''wandb.init(
+    wandb.init(
         project="NLU_LM", 
         name=args.exp_name, 
         config={
@@ -63,7 +63,7 @@ if __name__ == "__main__":
             "dropout value": 0.2,
             "regularization": args.regularization
             })
-    '''
+    
     # set a seed for reproducibility of experiments
     torch.manual_seed(32)
     exp_name = args.exp_name
@@ -81,16 +81,16 @@ if __name__ == "__main__":
               store_path='./dataset')
     '''
 
-    '''data_path = {'train': 'dataset/PennTreeBank/ptb.train.txt',
+    data_path = {'train': 'dataset/PennTreeBank/ptb.train.txt',
                  'val': 'dataset/PennTreeBank/ptb.valid.txt',
                  'test': 'dataset/PennTreeBank/ptb.test.txt'
                  }
-    '''
+   
     # path for debugger
-    data_path = {'train': 'LM/part_2/dataset/PennTreeBank/ptb.train.txt',
+    '''data_path = {'train': 'LM/part_2/dataset/PennTreeBank/ptb.train.txt',
                  'val': 'LM/part_2/dataset/PennTreeBank/ptb.valid.txt',
                  'test': 'LM/part_2/dataset/PennTreeBank/ptb.test.txt'}
-    
+    '''
 
     vocab_len, train_loader, val_loader, test_loader, padding = build_dataloaders(train_data_path=data_path['train'],
                                                                                   val_data_path=data_path['val'],
@@ -146,10 +146,9 @@ if __name__ == "__main__":
         optimizer = optim.SGD(model.parameters(), lr=learning_rate)
 
     # this is weird but here we want to change optimizer based on the regularization we want, so it fits here rather than when defining models
-    # use Non-monotonically Triggered AvSGD as optimizer
-    # note: important to have size of window > patience unless you always want to consider the full window for the update which would defeat the whole purpose
+    # use AvSGD as optimizer
     elif(args.regularization == 3):
-        optimizer = My_AvSGD(params=model.parameters(), lr=learning_rate, validation_window=10, patience=5, threshold=0.001)
+        optimizer = My_AvSGD(params=model.parameters(), lr=learning_rate, threshold=10)
     else:
         optimizer = optim.SGD(model.parameters(), lr=4)
 
@@ -164,11 +163,10 @@ if __name__ == "__main__":
             sampled_epochs.append(epoch)
             losses_train.append(np.asarray(loss).mean())
 
-            #ppl_val, loss_val = model.validation(data=val_loader)
             ppl_val, loss_val = validation(model=model, data=val_loader)
-            perplexity_list.append(ppl_val)
 
-            losses_val.append(np.asarray(loss_val).mean())
+            #perplexity_list.append(ppl_val)
+            #losses_val.append(np.asarray(loss_val).mean())
             pbar.set_description("PPL: %f" % ppl_val)
             if  ppl_val < best_ppl: # the lower, the better
                 best_ppl = ppl_val
@@ -180,8 +178,8 @@ if __name__ == "__main__":
             if patience_current <= 0: # Early stopping with patience
                 break # Not nice but it keeps the code clean
 
-            #wandb.log({"train_loss": loss, "validation_loss": loss_val}, step=epoch)
-            #wandb.log({"perplexity": ppl_val}, step=epoch)
+            wandb.log({"train_loss": loss, "validation_loss": loss_val}, step=epoch)
+            wandb.log({"perplexity": ppl_val}, step=epoch)
 
 
     '''plot_results(data=perplexity_list, epochs=n_epochs, label='perplexity')

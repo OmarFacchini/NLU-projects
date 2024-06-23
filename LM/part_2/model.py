@@ -141,6 +141,9 @@ class Variational_Dropout_LM_LSTM(nn.Module):
         # but bernoulli allows direct implementation of varying probabilities so i opted on that rather than the uniform
         self.dropout_mask2 = torch.bernoulli(temp_mask)
 
+        #could also use the one implemented in the paper, should be the same:
+        #self.dropout_mask2 = x.weight.data.new().resize_((x.weight.size(0), 1)).bernoulli_(1 - self.dropout).expand_as(x.weight) / (1 - self.dropout)
+
 
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
@@ -203,33 +206,53 @@ class Variational_Dropout_LM_LSTM(nn.Module):
             
 
 class My_AvSGD(optim.SGD):
-    def __init__(self, params, lr=4, validation_window=5, patience=5, threshold=0.01):
-        super(My_AvSGD, self).__init__()
+    def __init__(self, params, lr=4, threshold=0.01, weight_decay=0):
+        default_params = dict(lr=lr, threshold=threshold, weight_decay=weight_decay)
+        super(My_AvSGD, self).__init__(params, default_params)
 
-        self.validation_window = validation_window
-        self.patience = patience
-        self.threshold = threshold
-        self.val_losses = []
-        self.lr = lr
+        for group in self.param_groups:
+            for param in group['params']:
+                self.state[param] = {'average': torch.zeros_like(param.data), # buffer for averages
+                                     'steps': 0 # steps counter
+                                    }
 
-    def insert_loss(self, loss):
-        self.val_losses.append(loss)
-
-    
     def step(self):
+        with torch.no_grad():
+            for group in self.param_groups:
+                for param in group['params']:
+                    if param.grad is not None:
 
-        if len(self.val_losses) >= self.validation_window:
-            average_loss = sum(self.val_losses) / self.validation_window
+                        param_gradient_data = param.grad.data
+                        state = self.state[param]
 
-            # compares average loss to the minimum of a sliding window, also add an epsilon(threshold) to verify monotomy
-            # if average is bigger than minimum loss achieved, slow down by lowering the lr
-            if average_loss > min(self.val_losses[-self.validation_window - self.patience : -self.patience]) - self.threshold:
-                self.lr *= 0.1
-                ''' could edit the losses list to save space by doing this, but i'm not sure it's worth nor i'm sure it works, so i will keep it standard for now
-                if(len(self.val_losses) > self.validation_window + self.patience):
-                new_losses = self.val_losses[1 : self.validation_window + self.patience]'''
+                        # add wd to param if used
+                        if group['weight_decay'] != 0:
+                            param_gradient_data.add_(group['weight_decay'], param.data)
 
-        # call SGD.step() as it contains the main points to update the model
-        super(My_AvSGD, self).step()
+                        # update number of steps
+                        state['step'] += 1
+                        steps = state['step']
+                        threshold_steps = group['threshold']
 
+                        # check if did more steps than threshold, if so update lr else keep the same
+                        if steps >= threshold_steps:
+                            lr = group['lr'] / (1 + group['lr'] * group['lambd'] * (steps - threshold_steps))
+                        else:
+                            lr = group['lr']
+                        
+                        # update param
+                        param.data.add_(-lr, param_gradient_data)
+
+                        # compute average
+                        if steps >= threshold_steps:
+                            state['average'].add_(param.data - state['average']).mul_((steps - threshold_steps) / (steps - threshold_steps + 1))
+                        else:
+                            state['average'].add_(param.data - state['average']).div_(steps)
+
+
+    # update the params with the average calculated beforehand
+    def update_params(self):
+        for group in self.param_groups:
+            for param in group['params']:
+                param.data.copy_(self.state[param]['average'])
         
