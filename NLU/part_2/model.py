@@ -1,6 +1,8 @@
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from transformers import BertTokenizer, BertModel, BertPreTrainedModel
+from transformers.configuration_utils import PretrainedConfig
     
 class ModelIAS(nn.Module):
 
@@ -68,3 +70,36 @@ class ModelIAS(nn.Module):
         slots = slots.permute(0,2,1) # We need this for computing the loss
         # Slot size: batch_size, classes, seq_len
         return slots, intent
+    
+  
+
+class modifiedBERT(BertPreTrainedModel):
+    
+    def __init__(self, config: PretrainedConfig, intents, slots):
+        super(modifiedBERT, self).__init__(config)
+        self.intents = intents
+        self.slots = slots
+
+        self.model = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        self.intent_out = nn.Linear(config.hidden_size, intents)
+        self.slot_out = nn.Linear(config.hidden_size, slots)
+
+        self.init_weights()
+
+
+    def forward(self, token_ids, attention_mask):
+        pred = self.model(token_ids, attention_mask=attention_mask)
+
+        sequence_out = pred[0]
+        pooled_out = pred[1]
+
+        sequence_out = self.dropout(sequence_out)
+        pooled_out = self.dropout(pooled_out)
+
+        intent_pred = self.intent_out(pooled_out)
+        slot_pred = self.slot_out(sequence_out)
+
+        return intent_pred, slot_pred
+      

@@ -6,4 +6,4 @@
 # note: ideally the exp_name format would be: optimDroplr if using dropout or optimlr if not
 # so in case of SGD with dropout and lr 0.01 exp_name = SGDDrop001
 # in case of same situation without dropout  exp_name = SGD001
-CUDA_VISIBLE_DEVICES=0 python main.py --epochs 100 --dropout 0 --lr 0.1 --exp_name NLU-AdamBidir01
+CUDA_VISIBLE_DEVICES=0 python main.py --epochs 100 --dropout 0 --lr 0.1 --exp_name a

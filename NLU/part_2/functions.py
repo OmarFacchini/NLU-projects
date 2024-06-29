@@ -46,8 +46,10 @@ class Lang():
                 vocab[elem] = len(vocab)
         return vocab
     
+    
 
 def collate_fn(data, pad_token=0, device='cuda:0'):
+    device='cpu'
     def merge(sequences):
         '''
         merge from batch * sent_len to batch * max_len 
@@ -76,12 +78,15 @@ def collate_fn(data, pad_token=0, device='cuda:0'):
     src_utt, _ = merge(new_item['utterance'])
     y_slots, y_lengths = merge(new_item["slots"])
     intent = torch.LongTensor(new_item["intent"])
+    origin_utt, _ = merge(new_item['original_utterance_ids'])
     
+    origin_utt.to(device)
     src_utt = src_utt.to(device) # We load the Tensor on our selected device
     y_slots = y_slots.to(device)
     intent = intent.to(device)
     y_lengths = torch.LongTensor(y_lengths).to(device)
     
+    new_item['original_utterances_ids'] = origin_utt
     new_item["utterances"] = src_utt
     new_item["intents"] = intent
     new_item["y_slots"] = y_slots
@@ -90,11 +95,11 @@ def collate_fn(data, pad_token=0, device='cuda:0'):
 
 
 
-def build_dataloaders(train_raw, val_raw, test_raw, lang):
+def build_dataloaders(train_raw, val_raw, test_raw, lang, tokenizer):
 
-    train_dataset = utils.IntentsAndSlots(train_raw, lang)
-    val_dataset = utils.IntentsAndSlots(val_raw, lang)
-    test_dataset = utils.IntentsAndSlots(test_raw, lang)
+    train_dataset = utils.IntentsAndSlots(train_raw, lang, tokenizer=tokenizer, myType='train')
+    val_dataset = utils.IntentsAndSlots(val_raw, lang, tokenizer=tokenizer, myType='val')
+    test_dataset = utils.IntentsAndSlots(test_raw, lang, tokenizer=tokenizer, myType='test')
 
     train_loader = DataLoader(train_dataset, batch_size=128, collate_fn=collate_fn,  shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=64, collate_fn=collate_fn)
@@ -104,19 +109,37 @@ def build_dataloaders(train_raw, val_raw, test_raw, lang):
 
 
 ## ====================================== model related functions ========================================== ##
-def train(model, data, optimizer, clip=5):
+def train(model, data, optimizer, criterion_slots, criterion_intents, clip=5, device='cuda:0'):
+        device = 'cpu'
         model.train()
         loss = 0
         total_loss = 0
 
         for sample in data:
 
+            # input_ids.shape = batch_size * max_len
+            input_ids = sample['utterances'].to(device)
+
+            # attention_mask.shape = batch_size * max_len
+            attention_mask = torch.stack(sample['attention_mask']).to(device)
+
+            # intents.shape = batch_size
+            intents = sample['intents'].to(device)
+
+            # slots.shape = batch_size * max_len
+            slots = sample['y_slots'].to(device)
+
             optimizer.zero_grad() # Zeroing the gradient
 
-            slots, intent = model(sample['utterances'], sample['slots_len'])
+            # intent_pred.shape = batch_size * number_of_intents(len(total_intents))
+            # slot_pred.shape = batch_size * max_len * number_of_slots(129????)
+            intent_pred, slot_pred = model(token_ids=input_ids, attention_mask=attention_mask)
 
-            loss_intent = model.criterion_intents(intent, sample['intents'])
-            loss_slot = model.criterion_slots(slots, sample['y_slots'])
+            #loss_slot = criterion_slots(slot_pred.view(-1,sample['slots_len']), sample['y_slots'])
+            loss_slot = criterion_slots(slot_pred.view(-1, model.slots), slots.view(-1))
+
+            #loss_intent = criterion_intents(intent_pred, sample['intents'])
+            loss_intent = criterion_intents(intent_pred, intents)
 
             loss = loss_intent + loss_slot
 
@@ -131,7 +154,8 @@ def train(model, data, optimizer, clip=5):
         return total_loss/len(data)   
 
 
-def validation(model, data, lang):
+def validation(model, data, lang, criterion_slots, criterion_intents, device='cuda:0'):
+    device = 'cpu'
     model.eval()
 
     with torch.no_grad():
@@ -143,43 +167,90 @@ def validation(model, data, lang):
         hyp_slots = []
         
         for sample in data:
-            
-            slots, intents = model(sample['utterances'], sample['slots_len'])
 
-            loss_intent = model.criterion_intents(intents, sample['intents'])
-            loss_slot = model.criterion_slots(slots, sample['y_slots'])
+            # input_ids.shape = batch_size * max_len
+            input_ids = sample['utterances'].to(device)
+            original_utt_ids = sample['original_utterances_ids']
+
+            # attention_mask.shape = batch_size * max_len
+            attention_mask = torch.stack(sample['attention_mask']).to(device)
+
+            # intents.shape = batch_size
+            intents = sample['intents'].to(device)
+
+             # slots.shape = batch_size * max_len
+            slots = sample['y_slots'].to(device)
+
+            # intent_pred.shape = batch_size * number_of_intents(len(total_intents))
+            # slot_pred.shape = batch_size * max_len * number_of_slots(130)
+            intent_pred, slot_pred = model(token_ids=input_ids, attention_mask=attention_mask)
+
+
+            loss_slot = criterion_slots(slot_pred.view(-1,model.slots), slots.view(-1))
+            loss_intent = criterion_intents(intent_pred, intents)
 
             loss = loss_intent + loss_slot
 
             total_loss += loss.item()
 
-            # Intent inference
-            # Get the highest probable class
-            out_intents = [lang.id2intent[x] for x in torch.argmax(intents, dim=1).tolist()] 
-            gt_intents = [lang.id2intent[x] for x in sample['intents'].tolist()]
+            # mapping from ID to intent label of the prediction
+            # torch.argmax(intent_pred, dim=1).shape = batch_size
+            # len(predicted_intents) = 64
+            predicted_intents = [lang.id2intent[x] for x in torch.argmax(intent_pred, dim=1).tolist()] 
 
-            ref_intents.extend(gt_intents)
-            hyp_intents.extend(out_intents)
+            # map from ID to intent label the original intents
+            # len(real_intents) = 64
+            real_intents = [lang.id2intent[x] for x in intents.tolist()]
 
-            # Slot inference 
-            output_slots = torch.argmax(slots, dim=1)
+            # global list of real intents
+            # ref = reference
+            ref_intents.extend(real_intents)
+            
+            # global list of predicted intents
+            # hyp = hypothetical
+            hyp_intents.extend(predicted_intents)
 
-            for idx, seq in enumerate(output_slots):
+            # predicted_slots.shape = batch_size * max_len
+            predicted_slots = torch.argmax(slot_pred, dim=2)
+
+            for idx, seq in enumerate(predicted_slots):
+                # is max_len, if all samples are padded to same len
+                # otherwise is length of the sample
                 length = sample['slots_len'].tolist()[idx]
 
-                utt_ids = sample['utterance'][idx][:length].tolist()
-                gt_ids = sample['y_slots'][idx].tolist()
+                # note that this doesn't properly get the utterance as we are using the tokenizer
+                # of the model rather than our own mapping
+                utt_ids = original_utt_ids[idx][:length].tolist()
 
-                gt_slots = [lang.id2slot[elem] for elem in gt_ids[:length]]
-                utterance = [lang.id2word[elem] for elem in utt_ids]
+                # take real slots ids
+                # len(real_slots_ids) = max_len
+                # gt_ids
+                real_slots_ids = slots[idx].tolist()
 
+                # convert slots ids into the actual labels of the slot
+                # len(real_slots_labels) = max_len
+                # gt_slots
+                real_slots_labels = [lang.id2slot[elem] for elem in real_slots_ids[:length]]
+
+                #utterance = [elem for elem in utt_ids]
+
+                # get predicted_slots ids for the sample
+                # len(to_decode) = max_len
                 to_decode = seq[:length].tolist()
 
-                ref_slots.append([(utterance[id_el], elem) for id_el, elem in enumerate(gt_slots)])
+                # global list of real slots
+                # len([]) = batch_size
+                # len([()]) = max_len
+                # [(utterance, slot_label), ...]
+                ref_slots.append([(utt_ids[id_el], elem) for id_el, elem in enumerate(real_slots_labels)])
 
                 tmp_seq = []
+                # convert predicted slots ids into the actual labels of the slot
+                # len(predicted_slots_labels) = max_len
+                # predicted_slots_labels = [lang.id2slot[elem] for elem in to_decode[:length]]
+                # instead of doing that, we loop on the decode and append a tuple to global list of predicted_slots
                 for id_el, elem in enumerate(to_decode):
-                    tmp_seq.append((utterance[id_el], lang.id2slot[elem]))
+                    tmp_seq.append((utt_ids[id_el], lang.id2slot[elem]))
                 hyp_slots.append(tmp_seq)
         
     try:

@@ -7,6 +7,7 @@ from model import *
 from utils import *
 
 from tqdm import tqdm
+from transformers import BertTokenizer, BertModel
 import copy
 import math
 import torch.optim as optim
@@ -61,23 +62,24 @@ if __name__ == "__main__":
     torch.manual_seed(32)
     exp_name = args.exp_name
 
-    
-    data_path = {'train': 'dataset/ATIS/train.json',
-                 'test': 'dataset/ATIS/test.json'
+    '''
+    data_path = {'train': '../dataset/ATIS/train.json',
+                 'test': '../dataset/ATIS/test.json'
                 }
-    
+    '''
     
     #DATA PATH FOR DEBUGGER
-    '''
+    
     data_path = {'train': 'NLU/dataset/ATIS/train.json',
                  'test': 'NLU/dataset/ATIS/test.json'
                 }
-    '''
+    
 
     tmp_train_raw_data = load_data(data_path['train'])
     test_raw_data = load_data(data_path['test'])
     print('Train samples:', len(tmp_train_raw_data))
     print('Test samples:', len(test_raw_data))
+
 
     # tmp_train_raw_data[0] is: {'intent': -
     #                            'slots': -
@@ -95,36 +97,28 @@ if __name__ == "__main__":
 
     lang = Lang(words, total_intents, slots, cutoff=0)
 
-    train_loader, val_loader, test_loader = build_dataloaders(train_raw=train_raw_data, 
-                                                              val_raw=val_raw_data, 
-                                                              test_raw=test_raw_data, lang=lang)
-
+    slots.add('pad')
 
     PAD_TOKEN = 0
-
-    hid_size = 200
-    emb_size = 300
 
     lr = args.lr
     clip = 5 # Clip the gradient
 
-    out_slot = len(lang.slot2id)
-    out_int = len(lang.intent2id)
-    vocab_len = len(lang.word2id)
-
     criterion_slots = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN)
     criterion_intents = nn.CrossEntropyLoss() # Because we do not have the pad token
 
-    model = ModelIAS(hid_size=hid_size,
-                     out_slot=out_slot, 
-                     out_int=out_int,
-                     emb_size=emb_size, 
-                     vocab_len=vocab_len,
-                     criterion_slots=criterion_slots,
-                     criterion_intents=criterion_intents, 
-                     pad_index=PAD_TOKEN,
-                     dropout=args.dropout).cuda()
-    model.apply(init_weights)
+    model_name = 'bert-base-uncased'
+    max_token_len = 50
+
+    #model = BertModel.from_pretrained(model_name).to(CPU)
+    model = modifiedBERT.from_pretrained(model_name, intents=len(total_intents), slots=len(slots)).to(CPU)
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+
+    train_loader, val_loader, test_loader = build_dataloaders(train_raw=train_raw_data, 
+                                                              val_raw=val_raw_data, 
+                                                              test_raw=test_raw_data, 
+                                                              lang=lang,
+                                                              tokenizer=tokenizer)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -132,17 +126,18 @@ if __name__ == "__main__":
     losses_val = []
     sampled_epochs = []
     best_f1 = 0
-    best_model = None
+    best_model = model
 
 
     for epoch in pbar:
-        loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip)
+        #loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
+        loss = 0
 
         if epoch % 1 == 0:
             sampled_epochs.append(epoch)
             losses_train.append(np.asarray(loss).mean())
 
-            results_val, intent_res, loss_val = validation(model=model, data=val_loader, lang=lang)
+            results_val, intent_res, loss_val = validation(model=model, data=val_loader, lang=lang, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
             losses_val.append(np.asarray(loss_val).mean())
         
             f1 = results_val['total']['f']

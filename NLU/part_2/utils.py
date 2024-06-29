@@ -7,11 +7,15 @@ from subprocess import run
 
 class IntentsAndSlots(Dataset):
     # Mandatory methods are __init__, __len__ and __getitem__
-    def __init__(self, dataset, lang, unk='unk'):
+    def __init__(self, dataset, lang, unk='unk', tokenizer=None, max_len=50, myType=None):
         self.utterances = []
         self.intents = []
         self.slots = []
         self.unk = unk
+        self.lang = lang
+
+        self.tokenizer = tokenizer
+        self.max_len = max_len
         
         for x in dataset:
             self.utterances.append(x['utterance'])
@@ -22,14 +26,79 @@ class IntentsAndSlots(Dataset):
         self.slot_ids = self.mapping_seq(self.slots, lang.slot2id)
         self.intent_ids = self.mapping_labels(self.intents, lang.intent2id)
 
+        '''
+        print(myType)
+        print("*"*50)
+        print("utterance ")
+        print("="*50)
+        found_error = False
+        for utt in self.utt_ids:
+            for item in utt:
+                if item == 0:
+                    print('found pad')
+                    found_error = True
+                if item == 1:
+                    print('found unk')
+                    found_error = True
+            if found_error:
+                print(utt)
+            found_error = False
+
+        print("="*50)
+
+        print("slots")
+        found_error = False
+        for slot in self.slot_ids:
+            for item in slot:
+                if item == 0:
+                    print('found pad')
+                    found_error = True
+            if found_error:
+                print(slot)
+            found_error = False
+
+        print("="*50)
+        '''
+
+
+
     def __len__(self):
         return len(self.utterances)
 
     def __getitem__(self, idx):
-        utt = torch.Tensor(self.utt_ids[idx])
-        slots = torch.Tensor(self.slot_ids[idx])
+        #utt = torch.Tensor(self.utt_ids[idx])
+        utt = self.utterances[idx]
+        utt_ids = self.utt_ids[idx]
+        slots_ids = self.slot_ids[idx]
         intent = self.intent_ids[idx]
-        sample = {'utterance': utt, 'slots': slots, 'intent': intent}
+
+        text_encoding = self.tokenizer.encode_plus(utt,
+                                                   max_length=self.max_len,
+                                                   add_special_tokens=True,
+                                                   padding='max_length',
+                                                   truncation=True,
+                                                   return_attention_mask=True,
+                                                   return_tensors='pt')
+        
+        token_ids = text_encoding['input_ids'].flatten()
+        attention_mask = text_encoding['attention_mask'].flatten()
+
+        # list full of 'O' of size of max len, pads all slots to same size and takes into
+        # account the special tokens of the tokenizer (start and end of sentence)
+        slots_labels = [self.lang.slot2id['O']] * self.max_len
+        slots_labels[:len(self.slot_ids[idx])] = slots_ids
+
+        utt_labels = [self.lang.word2id['pad']] * self.max_len
+        utt_labels[:len(self.utt_ids[idx])] = utt_ids
+        
+        sample = {'utterance': token_ids,
+                  'attention_mask': attention_mask,
+                  'original_utterance_ids': torch.Tensor(utt_labels),
+                  #'intent': torch.tensor(intent),
+                  #'slots': torch.tensor(slots)
+                  'intent': intent,
+                  'slots': torch.Tensor(slots_labels)
+                 }
         return sample
     
     # Auxiliary methods
