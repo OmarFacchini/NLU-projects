@@ -161,7 +161,7 @@ if __name__ == "__main__":
     for epoch in pbar:
         # check if we are using AvSGD and if we reached the starting of averaging
         if args.regularization == 3 and epoch >= avg_start:
-            loss, avg_params = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, avg=True)
+            loss, avg_params = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, avg_params=avg_params, avg=True)
         else: # if we are either not using AvSGD or we haven't reached the starting of averaging epoch, do standard train
             loss, _ = train(model=model, data=train_loader, optimizer=optimizer, clip=clip)
         
