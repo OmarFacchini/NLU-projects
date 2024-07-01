@@ -10,4 +10,4 @@
 #wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.test.txt
 #wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.valid.txt
 #wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.train.txt
-CUDA_VISIBLE_DEVICES=0 python main.py --optimizer SGD --epochs 100 --dropout 1 --lr 4 --regularization 1 --exp_name SDGDropWT4
+CUDA_VISIBLE_DEVICES=0 python main.py --optimizer AdamW --epochs 100 --dropout 1 --lr 0.005 --regularization 1 --exp_name AdamropWT0005

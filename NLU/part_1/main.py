@@ -12,7 +12,6 @@ import math
 import torch.optim as optim
 import numpy as np
 import argparse
-import wandb
 
 
 
@@ -44,26 +43,14 @@ if __name__ == "__main__":
 
     GPU = "cuda:0"
     CPU = 'cpu'
-
-    '''wandb.init(
-        project="NLU_NLU", 
-        name=args.exp_name, 
-        config={
-            "learning_rate": args.lr,
-            "optimizer": args.optimizer,
-            "epochs": args.epochs,
-            "architecture": "dropout: "+ str(args.dropout),
-            "dropout value": 0.2,
-            "regularization": args.regularization
-            })'''
     
     # set a seed for reproducibility of experiments
     torch.manual_seed(32)
     exp_name = args.exp_name
 
     
-    data_path = {'train': 'dataset/ATIS/train.json',
-                 'test': 'dataset/ATIS/test.json'
+    data_path = {'train': './dataset/ATIS/train.json',
+                 'test': './dataset/ATIS/test.json'
                 }
     
     
@@ -160,7 +147,7 @@ if __name__ == "__main__":
                 break
     
     best_model.cuda()
-    results_test, intent_test, _ = validation(model=best_model, data=val_loader, lang=lang)
+    results_test, intent_test, _ = validation(model=best_model, data=test_loader, lang=lang)
     print('Slot F1: ', results_test['total']['f'])
     print('Intent Accuracy:', intent_test['accuracy'])
 

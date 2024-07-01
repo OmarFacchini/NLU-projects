@@ -26,41 +26,6 @@ class IntentsAndSlots(Dataset):
         self.slot_ids = self.mapping_seq(self.slots, lang.slot2id)
         self.intent_ids = self.mapping_labels(self.intents, lang.intent2id)
 
-        '''
-        print(myType)
-        print("*"*50)
-        print("utterance ")
-        print("="*50)
-        found_error = False
-        for utt in self.utt_ids:
-            for item in utt:
-                if item == 0:
-                    print('found pad')
-                    found_error = True
-                if item == 1:
-                    print('found unk')
-                    found_error = True
-            if found_error:
-                print(utt)
-            found_error = False
-
-        print("="*50)
-
-        print("slots")
-        found_error = False
-        for slot in self.slot_ids:
-            for item in slot:
-                if item == 0:
-                    print('found pad')
-                    found_error = True
-            if found_error:
-                print(slot)
-            found_error = False
-
-        print("="*50)
-        '''
-
-
 
     def __len__(self):
         return len(self.utterances)

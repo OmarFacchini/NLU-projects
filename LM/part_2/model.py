@@ -192,7 +192,7 @@ class Variational_Dropout_LM_LSTM(nn.Module):
         # note3: this should not create issues with in-batch forward as once we calculate it, it's not None anymore 
         if self.dropout_mask2 is None:
             # here we could pass LSTM_output.weight_hh_l0 meaning weights of hidden-hidden(hh) connections of first layer(l0)
-            # while what we did down here is pass all the weights and biases of the layer, not sure which one should use, not clear
+            # while what we did down here is pass all the weights and biases of the layer
             self.calculate_dropout_mask2(LSTM_output)
 
         if self.training:
@@ -202,63 +202,6 @@ class Variational_Dropout_LM_LSTM(nn.Module):
         # a single layer, by default it's the last one and we don't need to "filter"
         output = self.output(LSTM_output).permute(0,2,1)
 
-        return output, hidden_layer
-            
+        return output, hidden_layer 
 
-class My_AvSGD(optim.SGD):
-    def __init__(self, params, lr=4, lambd=0.0001, threshold=0.01, weight_decay=0):
-        super().__init__(params, lr)
-
-        self.lr = lr
-        self.lambd = lambd
-        self.threshold = threshold
-        self.weight_decay = weight_decay
-
-        for group in self.param_groups:
-            for param in group['params']:
-                self.state[param] = {'average': torch.zeros_like(param.data), # buffer for averages
-                                     'steps': 0 # steps counter
-                                    }
-
-    def step(self):
-        for group in self.param_groups:
-            for param in group['params']:
-                if param.grad is not None:
-
-                    param_gradient_data = param.grad.data
-                    state = self.state[param]
-
-                    # add wd to param if used
-                    if group['weight_decay'] != 0:
-                        param_gradient_data.add_(group['weight_decay'], param.data)
-
-                    # update number of steps
-                    state['steps'] += 1
-                    steps = state['steps']
-                    #threshold_steps = group['threshold']
-                    threshold_steps = self.threshold
-
-                    # check if did more steps than threshold, if so update lr else keep the same
-                    if steps >= threshold_steps:
-                        #lr = group['lr'] / (1 + group['lr'] * group['lambd'] * (steps - threshold_steps))
-                        lr = self.lr / (1 + self.lr * self.lambd * (steps - threshold_steps))
-                    else:
-                        #lr = group['lr']
-                        lr = self.lr
-                    
-                    # update param
-                    param.data.add_(-lr, param_gradient_data)
-
-                    # compute average
-                    if steps >= threshold_steps:
-                        state['average'].add_(param.data - state['average']).mul_((steps - threshold_steps) / (steps - threshold_steps + 1))
-                    else:
-                        state['average'].add_(param.data - state['average']).div_(steps)
-
-
-    # update the params with the average calculated beforehand
-    def update_params(self):
-        for group in self.param_groups:
-            for param in group['params']:
-                param.data.copy_(self.state[param]['average'])
-        
+  

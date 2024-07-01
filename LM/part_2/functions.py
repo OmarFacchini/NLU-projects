@@ -89,11 +89,12 @@ def build_dataloaders(train_data_path, val_data_path, test_data_path):
 
 
 ## ====================================== model related functions ========================================== ##
-def train(model, data, optimizer, clip=5):
+def train(model, data, optimizer, clip=5, avg=False, avg_params=None, epoch=-1):
         model.train()
         loss = 0
         total_loss = 0
         number_of_tokens = []
+        idx = 0
 
         for sample in data:
             sample['source'] = sample['source'].to(model.device)
@@ -103,29 +104,32 @@ def train(model, data, optimizer, clip=5):
             optimizer.zero_grad() # Zeroing the gradient
 
             output, hidden = model(sample['source'], hidden)
-            #output = model(sample['source'])
-
 
             loss = model.criterion_train(output, sample['target'])
             total_loss += loss.item() * sample["number_tokens"]
             
             number_of_tokens.append(sample["number_tokens"])
             loss.backward() # Compute the gradient
+
             # clip the gradient to avoid explosioning gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step() # Update the weights
 
+            # for each batch reset the dropout masks
             if(model.regularization == 2):
                 model.dropout_mask1 = None
                 model.dropout_mask2 = None
             
-            if(model.regularization == 3):
-                optimizer.update_params()
+            # if we want the average update the average parameters dict
+            if avg:
+                with torch.no_grad():
+                    for name, param in model.named_parameters():
+                        avg_params[name] = (avg_params[name] * ((epoch - avg) * len(data) + idx) + param) / ((epoch - avg) * len(data) + idx + 1)
 
-        return total_loss/sum(number_of_tokens)    
+        return total_loss/sum(number_of_tokens), avg_params 
 
 
-def validation(model, data):
+def validation(model, data, validation_model=False):
     model.eval()
 
     with torch.no_grad():
@@ -138,7 +142,6 @@ def validation(model, data):
             hidden = model.init_hidden(sample['source'].size(0))
             
             output, hidden = model(sample['source'], hidden)
-            #output = model(sample['source'])
 
             #could remove loss and directly edit the total_loss but this looks cleaner and clearer
             loss = model.criterion_eval(output, sample['target'])
@@ -153,7 +156,8 @@ def validation(model, data):
     perplexity = math.exp(total_loss / sum(number_of_tokens))
     average_loss = total_loss/sum(number_of_tokens)
 
-    return perplexity, average_loss
+    return perplexity, average_loss, validation_model
+
 
 def init_weights(mat):
         for m in mat.modules():

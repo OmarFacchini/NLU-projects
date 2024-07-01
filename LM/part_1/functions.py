@@ -100,8 +100,8 @@ def train(model, data, optimizer, clip=5):
 
             optimizer.zero_grad() # Zeroing the gradient
 
+            # get predictions
             output, hidden = model(sample['source'], hidden)
-            #output = model(sample['source'])
 
 
             loss = model.criterion_train(output, sample['target'])
@@ -113,7 +113,7 @@ def train(model, data, optimizer, clip=5):
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step() # Update the weights
 
-        return total_loss/sum(number_of_tokens)    
+        return total_loss/sum(number_of_tokens)   
 
 
 def validation(model, data):

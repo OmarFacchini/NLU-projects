@@ -7,7 +7,7 @@
 # note: ideally the exp_name format would be: optimDroplr if using dropout or optimlr if not
 # so in case of SGD with dropout and lr 0.01 exp_name = SGDDrop001
 # in case of same situation without dropout  exp_name = SGD001
-wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.test.txt
-wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.valid.txt
-wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.train.txt
-CUDA_VISIBLE_DEVICES=0 python main.py --optimizer SGD --epochs 100 --dropout False --lr 4 --exp_name SGD001
+#wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.test.txt
+#wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.valid.txt
+#wget -P dataset/PennTreeBank https://raw.githubusercontent.com/BrownFortress/NLU-2024-Labs/main/labs/dataset/PennTreeBank/ptb.train.txt
+CUDA_VISIBLE_DEVICES=0 python main.py --optimizer AdamW --epochs 100 --dropout 1 --lr 0.005 --exp_name SGD001
