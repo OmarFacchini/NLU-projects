@@ -56,13 +56,15 @@ if __name__ == "__main__":
     torch.manual_seed(32)
     exp_name = args.exp_name
 
+    
     data_path = {'train': 'dataset/PennTreeBank/ptb.train.txt',
                  'val': 'dataset/PennTreeBank/ptb.valid.txt',
                  'test': 'dataset/PennTreeBank/ptb.test.txt'
                  }
-   
+    
     # path for debugger
-    '''data_path = {'train': 'LM/part_2/dataset/PennTreeBank/ptb.train.txt',
+    '''
+    data_path = {'train': 'LM/part_2/dataset/PennTreeBank/ptb.train.txt',
                  'val': 'LM/part_2/dataset/PennTreeBank/ptb.valid.txt',
                  'test': 'LM/part_2/dataset/PennTreeBank/ptb.test.txt'}
     '''
@@ -157,11 +159,9 @@ if __name__ == "__main__":
 
     #If the PPL is too high try to change the learning rate
     for epoch in pbar:
-        # check if we are using AvSGD
-        if args.regularization == 3:
-            # if usign AvSGD check if we reached the starting of averaging
-            if epoch >= avg_start:
-                loss, avg_params = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, avg=True)
+        # check if we are using AvSGD and if we reached the starting of averaging
+        if args.regularization == 3 and epoch >= avg_start:
+            loss, avg_params = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, avg=True)
         else: # if we are either not using AvSGD or we haven't reached the starting of averaging epoch, do standard train
             loss, _ = train(model=model, data=train_loader, optimizer=optimizer, clip=clip)
         
@@ -171,16 +171,14 @@ if __name__ == "__main__":
             sampled_epochs.append(epoch)
             losses_train.append(np.asarray(loss).mean())
 
-            # check if we are using AvSGD
-            if args.regularization == 3:
-                # if usign AvSGD check if we reached the starting of averaging
-                if epoch >= avg_start:
-                    # copy the average parameters in the model used for validation
-                    for name, param in validation_model.named_parameters():
-                        param.copy_(avg_params[name])
+            # check if we are using AvSGD and if we reached the starting of averaging
+            if args.regularization == 3 and epoch >= avg_start:
+                # copy the average parameters in the model used for validation
+                for name, param in validation_model.named_parameters():
+                    param.copy_(avg_params[name])
 
                     # if we have to use the averaged values
-                    ppl_val, loss_val, val_mode = validation(model=validation_model, data=val_loader, validation_model=True)
+                ppl_val, loss_val, val_mode = validation(model=validation_model, data=val_loader, validation_model=True)
             else: # if not AvSGD or not in averaging epochs, use standard model
                 ppl_val, loss_val, val_mode = validation(model=model, data=val_loader)
 
