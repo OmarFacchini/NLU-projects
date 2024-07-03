@@ -93,7 +93,7 @@ if __name__ == "__main__":
     model_name = 'bert-base-uncased'
     max_token_len = 50
 
-    model = modifiedBERT.from_pretrained(model_name, intents=len(total_intents), slots=len(slots)).to(CPU)
+    model = modifiedBERT.from_pretrained(model_name, intents=len(total_intents), slots=len(slots)).to(GPU)
     tokenizer = BertTokenizerFast.from_pretrained(model_name)
 
     train_loader, val_loader, test_loader = build_dataloaders(train_raw=train_raw_data, 
