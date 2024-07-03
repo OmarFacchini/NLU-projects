@@ -33,11 +33,20 @@ class IntentsAndSlots(Dataset):
     def __getitem__(self, idx):
         #utt = torch.Tensor(self.utt_ids[idx])
         utt = self.utterances[idx]
-        utt_ids = self.utt_ids[idx]
+        #utt_ids = self.utt_ids[idx]
         slots_ids = self.slot_ids[idx]
         intent = self.intent_ids[idx]
+        #slots_labels = self.slots[idx]
 
-        text_encoding = self.tokenizer.encode_plus(utt,
+
+        # Tokenize the utterance into words
+        words = utt.split()
+        word_slots = []
+        for word, slot in zip(words, slots_ids):
+            subwords = self.tokenizer.tokenize(word)
+            word_slots.extend([slot] * len(subwords))
+
+        '''text_encoding = self.tokenizer.encode_plus(utt,
                                                    max_length=self.max_len,
                                                    add_special_tokens=True,
                                                    padding='max_length',
@@ -45,25 +54,46 @@ class IntentsAndSlots(Dataset):
                                                    return_attention_mask=True,
                                                    return_tensors='pt')
         
+
+        token = self.tokenizer.tokenize(utt)
         token_ids = text_encoding['input_ids'].flatten()
-        attention_mask = text_encoding['attention_mask'].flatten()
+        attention_mask = text_encoding['attention_mask'].flatten()'''
 
-        # list full of 'O' of size of max len, pads all slots to same size and takes into
-        # account the special tokens of the tokenizer (start and end of sentence)
-        slots_labels = [self.lang.slot2id['O']] * self.max_len
-        slots_labels[:len(self.slot_ids[idx])] = slots_ids
-
-        utt_labels = [self.lang.word2id['pad']] * self.max_len
-        utt_labels[:len(self.utt_ids[idx])] = utt_ids
+        inputs = self.tokenizer(utt,
+                                padding='max_length',
+                                truncation=True,
+                                max_length=self.max_len,
+                                return_tensors='pt')
         
-        sample = {'utterance': token_ids,
+
+        inputs_ids = inputs['input_ids'].squeeze()
+        attention_mask = inputs['attention_mask'].squeeze()
+        #tokens = self.tokenizer.tokenize(utt)
+
+        aligned_labels = [self.lang.slot2id['O']] + word_slots + [self.lang.slot2id['O']]
+
+        while len(aligned_labels) < len(inputs_ids):
+            aligned_labels.append(self.lang.slot2id['pad'])
+
+        aligned_labels = aligned_labels[:len(inputs_ids)]  # Ensure alignment
+
+        
+        sample = {'utterance': inputs_ids,
                   'attention_mask': attention_mask,
-                  'original_utterance_ids': torch.Tensor(utt_labels),
+                  'slots': torch.tensor(aligned_labels),
+                  'intent': intent
+                  }
+
+        
+        '''sample = {'utterance': token_ids,
+                  'attention_mask': torch.Tensor(attention_mask),
+                  #'tokenizer': self.tokenizer,
+                  'original_utterance': utt,
                   #'intent': torch.tensor(intent),
                   #'slots': torch.tensor(slots)
                   'intent': intent,
-                  'slots': torch.Tensor(slots_labels)
-                 }
+                  'slots': torch.Tensor(encoded)
+                 }'''
         return sample
     
     # Auxiliary methods

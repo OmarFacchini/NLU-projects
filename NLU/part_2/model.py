@@ -3,6 +3,7 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from transformers import BertTokenizer, BertModel, BertPreTrainedModel
 from transformers.configuration_utils import PretrainedConfig
+import torch
     
 class ModelIAS(nn.Module):
 
@@ -81,6 +82,10 @@ class modifiedBERT(BertPreTrainedModel):
         self.slots = slots
 
         self.model = BertModel(config)
+
+        for param in self.model.parameters():
+          param.requires_grad = False
+
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         self.intent_out = nn.Linear(config.hidden_size, intents)

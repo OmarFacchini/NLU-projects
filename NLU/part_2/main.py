@@ -7,7 +7,7 @@ from model import *
 from utils import *
 
 from tqdm import tqdm
-from transformers import BertTokenizer, BertModel
+from transformers import BertTokenizer, BertModel, BertTokenizerFast
 import copy
 import math
 import torch.optim as optim
@@ -25,11 +25,6 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', default='myModel', type=str, help="name of the experiment and model that will be stored")
 
     args = parser.parse_args()
-
-    if args.dropout:
-      print("using dropout %f" %args.dropout)
-    else:
-      print("not using dropout %f" %args.dropout)
 
     n_epochs = args.epochs
     patience_fixed = 5
@@ -50,18 +45,18 @@ if __name__ == "__main__":
     torch.manual_seed(32)
     exp_name = args.exp_name
 
-    '''
+    
     data_path = {'train': './dataset/ATIS/train.json',
                  'test': './dataset/ATIS/test.json'
                 }
-    '''
+    
     
     #DATA PATH FOR DEBUGGER
-    
+    '''
     data_path = {'train': 'NLU/dataset/ATIS/train.json',
                  'test': 'NLU/dataset/ATIS/test.json'
                 }
-    
+    '''
 
     tmp_train_raw_data = load_data(data_path['train'])
     test_raw_data = load_data(data_path['test'])
@@ -98,9 +93,8 @@ if __name__ == "__main__":
     model_name = 'bert-base-uncased'
     max_token_len = 50
 
-    #model = BertModel.from_pretrained(model_name).to(CPU)
     model = modifiedBERT.from_pretrained(model_name, intents=len(total_intents), slots=len(slots)).to(CPU)
-    tokenizer = BertTokenizer.from_pretrained(model_name)
+    tokenizer = BertTokenizerFast.from_pretrained(model_name)
 
     train_loader, val_loader, test_loader = build_dataloaders(train_raw=train_raw_data, 
                                                               val_raw=val_raw_data, 
@@ -118,14 +112,14 @@ if __name__ == "__main__":
 
 
     for epoch in pbar:
-        loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
-        #loss = 0
+        #loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
+        loss = 0
 
         if epoch % 1 == 0:
             sampled_epochs.append(epoch)
             losses_train.append(np.asarray(loss).mean())
 
-            results_val, intent_res, loss_val = validation(model=model, data=val_loader, lang=lang, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
+            results_val, intent_res, loss_val = validation(model=model, data=train_loader, lang=lang, criterion_slots=criterion_slots, criterion_intents=criterion_intents, tokenizer=tokenizer)
             losses_val.append(np.asarray(loss_val).mean())
         
             f1 = results_val['total']['f']
@@ -143,7 +137,7 @@ if __name__ == "__main__":
                 break
     
     best_model.cuda()
-    results_test, intent_test, _ = validation(model=best_model, data=test_loader, lang=lang)
+    results_test, intent_test, _ = validation(model=best_model, data=test_loader, lang=lang, criterion_slots=criterion_slots, criterion_intents=criterion_intents, tokenizer=tokenizer)
     print('Slot F1: ', results_test['total']['f'])
     print('Intent Accuracy:', intent_test['accuracy'])
 

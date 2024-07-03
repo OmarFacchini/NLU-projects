@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
         # clone the parameters and store them in a dictionary with name of parameter as key to maintain a live average
         # detatch as we don't want them in the computation graph
-        avg_params = {name: param.clone().detach() for name, param in model.named_parameters()}
+        avg_params = {name: param.clone().detach().requires_grad_(False) for name, param in model.named_parameters()}
 
     # standard case is LM_LSTM with no regularization(basically part 1)
     else:
@@ -173,9 +173,10 @@ if __name__ == "__main__":
 
             # check if we are using AvSGD and if we reached the starting of averaging
             if args.regularization == 3 and epoch >= avg_start:
-                # copy the average parameters in the model used for validation
-                for name, param in validation_model.named_parameters():
-                    param.copy_(avg_params[name])
+                with torch.no_grad():
+                    # copy the average parameters in the model used for validation
+                    for name, param in validation_model.named_parameters():
+                        param.copy_(avg_params[name])
 
                     # if we have to use the averaged values
                 ppl_val, loss_val, val_mode = validation(model=validation_model, data=val_loader, validation_model=True)

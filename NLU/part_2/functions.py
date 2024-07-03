@@ -49,7 +49,6 @@ class Lang():
     
 
 def collate_fn(data, pad_token=0, device='cuda:0'):
-    device='cpu'
     def merge(sequences):
         '''
         merge from batch * sent_len to batch * max_len 
@@ -78,15 +77,15 @@ def collate_fn(data, pad_token=0, device='cuda:0'):
     src_utt, _ = merge(new_item['utterance'])
     y_slots, y_lengths = merge(new_item["slots"])
     intent = torch.LongTensor(new_item["intent"])
-    origin_utt, _ = merge(new_item['original_utterance_ids'])
+    #origin_utt, _ = merge(new_item['original_utterance_ids'])
     
-    origin_utt.to(device)
+    #origin_utt.to(device)
     src_utt = src_utt.to(device) # We load the Tensor on our selected device
     y_slots = y_slots.to(device)
     intent = intent.to(device)
     y_lengths = torch.LongTensor(y_lengths).to(device)
     
-    new_item['original_utterances_ids'] = origin_utt
+   #new_item['original_utterances'] = new_item['original_utterance']
     new_item["utterances"] = src_utt
     new_item["intents"] = intent
     new_item["y_slots"] = y_slots
@@ -110,7 +109,6 @@ def build_dataloaders(train_raw, val_raw, test_raw, lang, tokenizer):
 
 ## ====================================== model related functions ========================================== ##
 def train(model, data, optimizer, criterion_slots, criterion_intents, clip=5, device='cuda:0'):
-        device = 'cpu'
         model.train()
         loss = 0
         total_loss = 0
@@ -132,17 +130,19 @@ def train(model, data, optimizer, criterion_slots, criterion_intents, clip=5, de
             optimizer.zero_grad() # Zeroing the gradient
 
             # intent_pred.shape = batch_size * number_of_intents(len(total_intents))
-            # slot_pred.shape = batch_size * max_len * number_of_slots(129????)
+            # slot_pred.shape = batch_size * max_len * number_of_slots(129)
             intent_pred, slot_pred = model(token_ids=input_ids, attention_mask=attention_mask)
 
-            #loss_slot = criterion_slots(slot_pred.view(-1,sample['slots_len']), sample['y_slots'])
+            # calculate the loss on the slots
             loss_slot = criterion_slots(slot_pred.view(-1, model.slots), slots.view(-1))
 
-            #loss_intent = criterion_intents(intent_pred, sample['intents'])
+            # calculate the loss on the intents
             loss_intent = criterion_intents(intent_pred, intents)
 
+            # sum it up
             loss = loss_intent + loss_slot
 
+            # keep track of total loss of batch
             total_loss += loss.item()
             
             loss.backward() # Compute the gradient
@@ -151,13 +151,14 @@ def train(model, data, optimizer, criterion_slots, criterion_intents, clip=5, de
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step() # Update the weights
 
+        # return average loss of the batch
         return total_loss/len(data)   
 
-
-def validation(model, data, lang, criterion_slots, criterion_intents, device='cuda:0'):
-    device = 'cpu'
+# basically same as training, without the backward of the loss and the addition of the evaluation of the performances
+def validation(model, data, lang, criterion_slots, criterion_intents, tokenizer, device='cuda:0'):
     model.eval()
 
+    # validation, don't compute grads
     with torch.no_grad():
         total_loss = 0
         ref_intents = []
@@ -169,16 +170,18 @@ def validation(model, data, lang, criterion_slots, criterion_intents, device='cu
         for sample in data:
 
             # input_ids.shape = batch_size * max_len
+            # tokenized and encoded utterance
             input_ids = sample['utterances'].to(device)
-            original_utt_ids = sample['original_utterances_ids']
 
             # attention_mask.shape = batch_size * max_len
+            # binary mask to know if what we are checking is relevant or padding
             attention_mask = torch.stack(sample['attention_mask']).to(device)
 
             # intents.shape = batch_size
             intents = sample['intents'].to(device)
 
-             # slots.shape = batch_size * max_len
+            # slots.shape = batch_size * max_len
+            # real slots
             slots = sample['y_slots'].to(device)
 
             # intent_pred.shape = batch_size * number_of_intents(len(total_intents))
@@ -195,11 +198,13 @@ def validation(model, data, lang, criterion_slots, criterion_intents, device='cu
 
             # mapping from ID to intent label of the prediction
             # torch.argmax(intent_pred, dim=1).shape = batch_size
-            # len(predicted_intents) = 64
+            # len(predicted_intents) = batch_size
+            # also getting the most likely prediction
             predicted_intents = [lang.id2intent[x] for x in torch.argmax(intent_pred, dim=1).tolist()] 
 
             # map from ID to intent label the original intents
-            # len(real_intents) = 64
+            # len(real_intents) = batch_size
+            # used to calculate accuracy for intents with respect to predictions
             real_intents = [lang.id2intent[x] for x in intents.tolist()]
 
             # global list of real intents
@@ -211,6 +216,7 @@ def validation(model, data, lang, criterion_slots, criterion_intents, device='cu
             hyp_intents.extend(predicted_intents)
 
             # predicted_slots.shape = batch_size * max_len
+            # get the actual predictions for the slots
             predicted_slots = torch.argmax(slot_pred, dim=2)
 
             for idx, seq in enumerate(predicted_slots):
@@ -218,9 +224,8 @@ def validation(model, data, lang, criterion_slots, criterion_intents, device='cu
                 # otherwise is length of the sample
                 length = sample['slots_len'].tolist()[idx]
 
-                # note that this doesn't properly get the utterance as we are using the tokenizer
-                # of the model rather than our own mapping
-                utt_ids = original_utt_ids[idx][:length].tolist()
+                # decode the token
+                decoded_token = tokenizer.decode(input_ids[idx])
 
                 # take real slots ids
                 # len(real_slots_ids) = max_len
@@ -232,26 +237,69 @@ def validation(model, data, lang, criterion_slots, criterion_intents, device='cu
                 # gt_slots
                 real_slots_labels = [lang.id2slot[elem] for elem in real_slots_ids[:length]]
 
-                #utterance = [elem for elem in utt_ids]
+                # ignore the first value ([CLS])
+                real_slots_labels = real_slots_labels[1:]
 
                 # get predicted_slots ids for the sample
                 # len(to_decode) = max_len
-                to_decode = seq[:length].tolist()
+                to_decode = seq[1:length].tolist()
 
                 # global list of real slots
                 # len([]) = batch_size
                 # len([()]) = max_len
                 # [(utterance, slot_label), ...]
-                ref_slots.append([(utt_ids[id_el], elem) for id_el, elem in enumerate(real_slots_labels)])
+                #ref_slots.append([(utt_ids[id_el], elem) for id_el, elem in enumerate(real_slots_labels)]
+                
+                # split the decoded string into a list of words to fix small issues
+                decoded_token = decoded_token.split()
 
-                tmp_seq = []
-                # convert predicted slots ids into the actual labels of the slot
-                # len(predicted_slots_labels) = max_len
-                # predicted_slots_labels = [lang.id2slot[elem] for elem in to_decode[:length]]
-                # instead of doing that, we loop on the decode and append a tuple to global list of predicted_slots
-                for id_el, elem in enumerate(to_decode):
-                    tmp_seq.append((utt_ids[id_el], lang.id2slot[elem]))
-                hyp_slots.append(tmp_seq)
+                actually_decoded_token = []
+
+                # the tokenizer has this issue where, other than the sub-tokenization, it adds values we don't have in the mapping
+                # for example " i 'd go to" should be tokenized as [i, 'd, go, to] but in reality it's [i, ', d, go, to]
+                # since we don't have the encoding for ' we want to ensure that the decoded token is actually the original
+                # so we fix that and in-place of the extra token we set 'O'
+                tmp_string = ""
+                for word in decoded_token:
+                    if "'" in word:
+                        for letter in word:
+                            if letter != "'":
+                                tmp_string += letter
+                            else:
+                                actually_decoded_token.append(tmp_string)
+                                actually_decoded_token.append('O')
+                                tmp_string = letter # '
+                        actually_decoded_token.append(tmp_string)
+                        tmp_string = ""
+                    else:
+                        actually_decoded_token.append(word)
+
+
+                # as this might (should not) lower the size of the token, we fix it by padding at the end 
+                # to ensure dimensionality
+                while len(actually_decoded_token) < len(real_slots_ids):
+                    actually_decoded_token.append(lang.slot2id['pad'])
+
+                # similar to before, we don't want the extra [CLS] token added by tokenizer
+                actually_decoded_token = actually_decoded_token[1:]
+                '''
+                # take in consideration only the important samples ( )
+                sample_attention_mask = attention_mask[idx].tolist()
+                sample_attention_mask = sample_attention_mask[1:]
+                
+                attention_mask_idx = 0
+                while attention_mask_idx < len(sample_attention_mask) and sample_attention_mask[attention_mask_idx] == 1:
+                    attention_mask_idx += 1
+                
+                sample_attention_mask = sample_attention_mask[:attention_mask_idx - 1]
+                actually_decoded_token = actually_decoded_token[:attention_mask_idx - 1]
+                to_decode = to_decode[:attention_mask_idx - 1]
+                real_slots_labels = real_slots_labels[:attention_mask_idx - 1]
+                '''
+
+
+                ref_slots.append([(actually_decoded_token[id_el], elem) for id_el, elem in enumerate(real_slots_labels)])
+                hyp_slots.append([(actually_decoded_token[id_el], lang.id2slot[elem]) for id_el, elem in enumerate(to_decode)])
         
     try:
         results = evaluate(ref_slots, hyp_slots)
