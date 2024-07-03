@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
 
     for epoch in pbar:
-        #loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
+        loss = train(model=model, data=train_loader, optimizer=optimizer, clip=clip, criterion_slots=criterion_slots, criterion_intents=criterion_intents)
         loss = 0
 
         if epoch % 1 == 0:
